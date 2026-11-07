@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: precosdb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: precos
+      POSTGRES_USER: precos
+      POSTGRES_PASSWORD: precos
+    ports:
+      - "5433:5432"
+    volumes:
+      - precosdb_data:/var/lib/postgresql/data
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+
+volumes:
+  precosdb_data:

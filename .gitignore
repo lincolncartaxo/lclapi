@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+inbox/
+extracted/
+fixtures/*
+!fixtures/README.md
+*.egg-info/
+.pytest_cache/
