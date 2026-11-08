@@ -31,14 +31,14 @@ def sources() -> list[dict[str, Any]]:
 
 @app.get('/v1/releases')
 def releases(source: str | None = None, limit: int = Query(50, ge=1, le=200)) -> list[dict[str, Any]]:
-    query = 'select r.id, s.code source, r.reference_month, r.region_code, r.title, r.source_file_name, r.imported_at from releases r join sources s on s.id=r.source_id where (:source is null or s.code=:source) order by r.reference_month desc limit :limit'
+    query = 'select r.id, s.code source, r.reference_month, r.region_code, r.title, r.source_file_name, r.imported_at from releases r join sources s on s.id=r.source_id where (cast(:source as text) is null or s.code::text=cast(:source as text)) order by r.reference_month desc limit :limit'
     with SessionLocal() as session:
         return [dict(row) for row in session.execute(text(query), {'source': source.upper() if source else None, 'limit': limit}).mappings()]
 
 
 @app.get('/v1/items')
 def items(q: str | None = None, source: str | None = None, kind: str | None = None, region: str | None = None, reference: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
-    filters = ['(:q is null or i.code ilike :like_q or i.description ilike :like_q)', '(:source is null or s.code=:source)', '(:kind is null or i.kind=:kind)', '(:region is null or p.region_code=:region)', '(:reference is null or to_char(r.reference_month, \'YYYY-MM\')=:reference)']
+    filters = ['(cast(:q as text) is null or i.code ilike :like_q or i.description ilike :like_q)', '(cast(:source as text) is null or s.code::text=cast(:source as text))', '(cast(:kind as text) is null or i.kind::text=cast(:kind as text))', '(cast(:region as text) is null or p.region_code=:region)', '(cast(:reference as text) is null or to_char(r.reference_month, \'YYYY-MM\')=:reference)']
     sql = f'''select distinct i.id, s.code source, i.code, i.kind, i.description, i.unit, i.category, p.region_code, p.pricing_variant, p.price, r.reference_month from items i join sources s on s.id=i.source_id left join item_prices p on p.item_id=i.id left join releases r on r.id=p.release_id where {' and '.join(filters)} order by i.code limit :limit offset :offset'''
     params = {'q': q, 'like_q': f'%{q}%' if q else None, 'source': source.upper() if source else None, 'kind': kind.upper() if kind else None, 'region': region.upper() if region else None, 'reference': reference, 'limit': page_size, 'offset': (page - 1) * page_size}
     with SessionLocal() as session:
@@ -48,7 +48,7 @@ def items(q: str | None = None, source: str | None = None, kind: str | None = No
 
 @app.get('/v1/items/{code}/prices')
 def item_prices(code: str, source: str = Query(...), reference: str | None = None) -> list[dict[str, Any]]:
-    sql = '''select i.code, i.kind, i.description, i.unit, s.code source, r.reference_month, p.region_code, p.pricing_variant, p.price, p.price_origin from items i join sources s on s.id=i.source_id join item_prices p on p.item_id=i.id join releases r on r.id=p.release_id where i.code=:code and s.code=:source and (:reference is null or to_char(r.reference_month, 'YYYY-MM')=:reference) order by p.region_code, p.pricing_variant'''
+    sql = '''select i.code, i.kind, i.description, i.unit, s.code source, r.reference_month, p.region_code, p.pricing_variant, p.price, p.price_origin from items i join sources s on s.id=i.source_id join item_prices p on p.item_id=i.id join releases r on r.id=p.release_id where i.code=:code and s.code::text=cast(:source as text) and (cast(:reference as text) is null or to_char(r.reference_month, 'YYYY-MM')=:reference) order by p.region_code, p.pricing_variant'''
     with SessionLocal() as session:
         return [dict(row) for row in session.execute(text(sql), {'code': code, 'source': source.upper(), 'reference': reference}).mappings()]
 
