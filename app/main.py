@@ -53,6 +53,60 @@ def item_prices(code: str, source: str = Query(...), reference: str | None = Non
         return [dict(row) for row in session.execute(text(sql), {'code': code, 'source': source.upper(), 'reference': reference}).mappings()]
 
 
+@app.get('/v1/compositions/{code}')
+def composition(code: str, source: str = Query(...), reference: str | None = None, region: str | None = None) -> dict[str, Any]:
+    """Return a composition with its components and matching unit prices."""
+    source_code = source.upper()
+    region_code = region.upper() if region else None
+    header_sql = '''
+        select c.id composition_id, i.code, i.kind, i.description, i.unit, i.category,
+               s.code source, r.id release_id, r.reference_month, r.title,
+               c.productivity, c.metadata
+        from compositions c
+        join items i on i.id=c.item_id
+        join sources s on s.id=i.source_id
+        join releases r on r.id=c.release_id
+        where i.code=:code and s.code::text=cast(:source as text)
+          and i.kind::text='COMPOSICAO'
+          and (cast(:reference as text) is null or to_char(r.reference_month, 'YYYY-MM')=:reference)
+        order by r.reference_month desc
+        limit 1
+    '''
+    component_sql = '''
+        select cc.position, cc.component_code, cc.component_kind::text as component_kind,
+               coalesce(cc.description, ci.description) description,
+               coalesce(cc.unit, ci.unit) unit, cc.coefficient, cc.total_cost,
+               ip.region_code, ip.pricing_variant, ip.price unit_price, ip.price_origin
+        from composition_components cc
+        left join items ci on ci.id=cc.component_item_id
+        left join item_prices ip on ip.item_id=cc.component_item_id
+          and ip.release_id=:release_id
+          and (cast(:region as text) is null or ip.region_code=:region)
+        where cc.composition_id=:composition_id
+        order by cc.position, cc.component_code, ip.region_code, ip.pricing_variant
+    '''
+    with SessionLocal() as session:
+        header = session.execute(text(header_sql), {'code': code, 'source': source_code, 'reference': reference}).mappings().first()
+        if header is None:
+            raise HTTPException(404, detail='Composição não encontrada para a fonte e referência informadas')
+        components = [dict(row) for row in session.execute(text(component_sql), {'composition_id': header['composition_id'], 'release_id': header['release_id'], 'region': region_code}).mappings()]
+    return {
+        'source': header['source'],
+        'code': header['code'],
+        'kind': header['kind'],
+        'description': header['description'],
+        'unit': header['unit'],
+        'category': header['category'],
+        'reference_month': header['reference_month'],
+        'release_id': header['release_id'],
+        'release_title': header['title'],
+        'productivity': header['productivity'],
+        'metadata': header['metadata'],
+        'region': region_code,
+        'components': components,
+    }
+
+
 @app.post('/v1/imports', status_code=201)
 async def import_file(file: UploadFile = File(...), dry_run: bool = False) -> dict[str, Any]:
     suffix = Path(file.filename or '').suffix.lower()
