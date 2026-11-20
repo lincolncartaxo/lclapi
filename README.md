@@ -55,7 +55,12 @@ Também é possível enviar um pacote para `POST /v1/imports` como multipart `fi
 - `GET /v1/releases?source=SINAPI`
 - `GET /v1/items?q=concreto&source=SINAPI&region=PB&reference=2026-08`
 - `GET /v1/items/{codigo}/prices?source=SICRO&reference=2026-07`
+- `GET /v1/catalog?q=concreto&source=SINAPI&region=PB&reference=2026-08&regime=nao_desonerado`
+- `GET /v1/compositions/{codigo}?source=SINAPI&region=PB&reference=2026-08&regime=desonerado`
+- `GET /v1/compositions/{codigo}/cost?source=SINAPI&region=PB&reference=2026-08&regime=desonerado`
 - `POST /v1/imports`
+
+As rotas `/v1/*` aceitam `X-API-Key` quando `API_KEY` estiver configurada. O `health` permanece público. A API normaliza `SICRO3` para releases legados armazenados como `SICRO`, e retorna os campos de catálogo (`fonte`, `codigo`, `descricao`, `unidade`, `uf`, `mes_ref` e preços por regime) esperados pelo lclpo.
 
 ## Decisões de normalização
 

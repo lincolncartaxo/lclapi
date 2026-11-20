@@ -95,3 +95,52 @@ def import_path(path: str | Path, dry_run: bool = False) -> dict[str, Any]:
     from .importers import parse_file
     parsed = parse_file(Path(path))
     return persist_release(parsed, dry_run=dry_run)
+
+
+def calculate_composition_cost(session, source: str | None, code: str, region: str | None, reference: str | None, regime: str | None, _seen: set[str] | None = None) -> float | None:
+    """Calculate a composition using the same fallback rules as the lclpo RPCs."""
+    if not source:
+        return None
+    variants = ('COM_DESONERACAO', 'PADRAO') if (regime or '').lower() in {'desonerado', 'com_desoneracao'} else ('SEM_DESONERACAO', 'PADRAO')
+    seen = _seen or set()
+    key = f'{source}:{code}:{reference}:{region}:{regime}'
+    if key in seen:
+        return None
+    seen.add(key)
+    header = session.execute(text('''
+        select c.id composition_id, i.code, r.id release_id
+        from compositions c join items i on i.id=c.item_id
+        join sources s on s.id=i.source_id join releases r on r.id=c.release_id
+        where (i.code=:code or ltrim(i.code, '0')=ltrim(:code, '0'))
+          and s.code=:source and i.kind='COMPOSICAO'
+          and (:reference is null or to_char(r.reference_month, 'YYYY-MM')=:reference)
+        order by r.reference_month desc limit 1
+    '''), {'code': code, 'source': source, 'reference': reference}).mappings().first()
+    if not header:
+        return None
+    rows = session.execute(text('''
+        select cc.component_code, cc.component_kind, cc.coefficient,
+               coalesce(cc.component_item_id, i.id) component_item_id
+        from composition_components cc
+        left join items i on i.code=cc.component_code and i.kind=coalesce(cc.component_kind, 'INSUMO')
+        where cc.composition_id=:composition_id order by cc.position
+    '''), {'composition_id': header['composition_id']}).mappings()
+    total = 0.0
+    found = False
+    for row in rows:
+        coefficient = float(row['coefficient'] or 0)
+        price = session.execute(text('''
+            select p.price from item_prices p
+            where p.item_id=:item_id and p.release_id=:release_id
+              and (:region is null or p.region_code=:region or p.region_code='BR')
+              and p.pricing_variant in (:variant_0, :variant_1)
+            order by (p.region_code=:region) desc,
+                     case when p.pricing_variant=:variant_0 then 0 else 1 end
+            limit 1
+        '''), {'item_id': row['component_item_id'], 'release_id': header['release_id'], 'region': region.upper() if region else None, 'variant_0': variants[0], 'variant_1': variants[1]}).scalar()
+        if price is None and str(row['component_kind'] or '').upper() == 'COMPOSICAO':
+            price = calculate_composition_cost(session, source, row['component_code'], region, reference, regime, seen)
+        if price is not None:
+            found = True
+            total += coefficient * float(price)
+    return round(total, 8) if found else None

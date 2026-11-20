@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     database_url: str = 'postgresql+psycopg://precos:precos@localhost:5433/precos'
     upload_dir: str = './inbox'
     api_title: str = 'PreçosAPI'
+    api_key: str = ''
+    cors_origins: str = ''
 
 
 settings = Settings()
